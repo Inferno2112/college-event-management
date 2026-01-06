@@ -187,6 +187,66 @@ router.get(
 );
 
 /**
+ * GET REGISTRATIONS FOR AN EVENT (Organizer)
+ * GET /api/events/:eventId/registrations
+ */
+router.get(
+  "/:eventId/registrations",
+  auth,
+  authorizeRoles("organizer"),
+  async (req, res) => {
+    try {
+      const { eventId } = req.params;
+      const organizerId = req.user.id;
+
+      // 1️⃣ Verify event exists and belongs to organizer
+      const event = await Event.findById(eventId);
+      if (!event) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+
+      if (event.organizerId.toString() !== organizerId) {
+        return res.status(403).json({ message: "Not authorized to view registrations for this event" });
+      }
+
+      // 2️⃣ Get all registrations with user details
+      const registrations = await Registration.find({ eventId })
+        .populate("studentId", "name email rollNo collegeName branch course enrollYear interests")
+        .sort({ createdAt: -1 });
+
+      // 3️⃣ Format response
+      const registrationsData = registrations.map(reg => ({
+        id: reg._id,
+        registeredAt: reg.createdAt,
+        student: {
+          id: reg.studentId._id,
+          name: reg.studentId.name,
+          email: reg.studentId.email,
+          rollNo: reg.studentId.rollNo,
+          collegeName: reg.studentId.collegeName,
+          branch: reg.studentId.branch,
+          course: reg.studentId.course,
+          enrollYear: reg.studentId.enrollYear,
+          interests: reg.studentId.interests
+        }
+      }));
+
+      res.status(200).json({
+        event: {
+          id: event._id,
+          title: event.title,
+          registeredCount: event.registeredCount,
+          capacity: event.capacity
+        },
+        registrations: registrationsData
+      });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+/**
  * GET RECOMMENDED EVENTS (AI + FALLBACK)
  * GET /api/events/recommended
  */
@@ -232,7 +292,95 @@ router.get(
   }
 );
 
+/**
+ * UPDATE EVENT (Organizer)
+ * PUT /api/events/:eventId
+ */
+router.put(
+  "/:eventId",
+  auth,
+  authorizeRoles("organizer"),
+  async (req, res) => {
+    try {
+      const { eventId } = req.params;
+      const {
+        title,
+        description,
+        category,
+        date,
+        venue,
+        capacity
+      } = req.body;
 
+      // Find event
+      const event = await Event.findById(eventId);
+      
+      if (!event) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+
+      // Check if user is the organizer
+      if (event.organizerId.toString() !== req.user.id) {
+        return res.status(403).json({ message: "Not authorized to update this event" });
+      }
+
+      // Update event
+      const updatedEvent = await Event.findByIdAndUpdate(
+        eventId,
+        {
+          title,
+          description,
+          category,
+          date,
+          venue,
+          capacity
+        },
+        { new: true, runValidators: true }
+      );
+
+      res.status(200).json(updatedEvent);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+/**
+ * DELETE EVENT (Organizer)
+ * DELETE /api/events/:eventId
+ */
+router.delete(
+  "/:eventId",
+  auth,
+  authorizeRoles("organizer"),
+  async (req, res) => {
+    try {
+      const { eventId } = req.params;
+
+      // Find event
+      const event = await Event.findById(eventId);
+      
+      if (!event) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+
+      // Check if user is the organizer
+      if (event.organizerId.toString() !== req.user.id) {
+        return res.status(403).json({ message: "Not authorized to delete this event" });
+      }
+
+      // Delete associated registrations
+      await Registration.deleteMany({ eventId });
+
+      // Delete event
+      await Event.findByIdAndDelete(eventId);
+
+      res.status(200).json({ message: "Event deleted successfully" });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
 
 
 module.exports = router;
