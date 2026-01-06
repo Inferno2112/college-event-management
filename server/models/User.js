@@ -31,7 +31,8 @@ const userSchema = new mongoose.Schema(
 
     rollNo: {
       type: String,
-      unique: true
+      unique: true,
+      sparse: true  // Allows multiple null values
     },
 
     collegeName: {
